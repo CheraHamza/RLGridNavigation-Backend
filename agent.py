@@ -1,4 +1,5 @@
 import random
+import pickle
 
 ACTIONS = ['up', 'down', 'left', 'right']
 
@@ -85,3 +86,17 @@ class QLearningAgent:
         """Remember what we just did for the NEXT update."""
         self.prev_state = state
         self.prev_action = action
+        
+    def to_bytes(self):
+        """Serializes the agent state to bytes (for DB storage)."""
+        data = {
+            "q_table": self.q_table,
+            "epsilon": self.epsilon
+        }
+        return pickle.dumps(data)
+
+    def from_bytes(self, byte_data):
+        """Loads agent state from bytes (from DB)."""
+        data = pickle.loads(byte_data)
+        self.q_table = data["q_table"]
+        self.epsilon = data["epsilon"]

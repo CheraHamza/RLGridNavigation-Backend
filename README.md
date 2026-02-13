@@ -1,1 +1,2 @@
 # RLGridNavigation-Backend
+This repository contains the backend code for the RLGridNavigation project, which is a reinforcement learning environment designed for grid-based navigation tasks. The backend is responsible for managing the environment's state, processing actions, and providing feedback to the agent.
