@@ -81,6 +81,12 @@ class TrainResponse(BaseModel):
     results: list[EpisodeResult]
 
 
+@app.get("/health")
+def health():
+    """Lightweight liveness probe – used by the frontend to detect cold-start."""
+    return {"status": "ok"}
+
+
 @app.post("/act", response_model=ActionResponse)
 def act(data: StepData):
     # 1. Learn from the Previous step (using current reward)
