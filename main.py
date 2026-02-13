@@ -1,4 +1,3 @@
-import os
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -13,9 +12,6 @@ init_db()
 
 app = FastAPI()
 
-cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:5173")
-cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,15 +22,6 @@ app.add_middleware(
 
 
 agent = QLearningAgent()
-
-@app.get("/health")
-def health():
-    """Debug endpoint to verify CORS config."""
-    return {
-        "status": "ok",
-        "cors_origins_env": cors_origins_env,
-        "cors_origins": cors_origins,
-    }
 
 def get_db():
     db = SessionLocal()
