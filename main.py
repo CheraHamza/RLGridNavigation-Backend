@@ -10,9 +10,17 @@ from database import SessionLocal, init_db, SavedModel
 from environment import GridWorld
 
 
-init_db()
+# NOTE: init_db() is called in the startup event below, NOT at module level.
+# This lets gunicorn bind to the port immediately so Render doesn't time out
+# waiting for an open HTTP port during cold-starts.
 
 app = FastAPI()
+
+
+@app.on_event("startup")
+def on_startup():
+    """Run DB migrations after the server has bound to the port."""
+    init_db()
 
 app.add_middleware(
     CORSMiddleware,
