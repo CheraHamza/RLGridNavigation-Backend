@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
+import json
 from agent import QLearningAgent
 from database import SessionLocal, init_db, SavedModel
 from environment import GridWorld
@@ -42,14 +43,23 @@ class ActionResponse(BaseModel):
     action: str
     epsilon: float
 
+class EnvironmentConfig(BaseModel):
+    height: int = 10
+    width: int = 10
+    starting_position: list[int] = [0, 0]
+    target_position: list[int] = [8, 8]
+    obstacles: list[list[int]] = []
+
 class ModelCreate(BaseModel):
     name: str
+    environment: EnvironmentConfig = EnvironmentConfig()
 
 class ModelList(BaseModel):
     id: int
     name: str
     epsilon: float
     created_at: datetime
+    environment: Optional[EnvironmentConfig] = None
 
 class TrainRequest(BaseModel):
     episodes: int = 500
@@ -155,17 +165,45 @@ def train(req: TrainRequest):
 @app.get("/models", response_model=List[ModelList])
 def list_models(db: Session = Depends(get_db)):
     """Return a list of all saved models."""
-    return db.query(SavedModel).all()
+    rows = db.query(SavedModel).all()
+    result = []
+    for row in rows:
+        env_config = None
+        if row.environment_config:
+            try:
+                env_config = json.loads(row.environment_config)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        result.append(ModelList(
+            id=row.id,
+            name=row.name,
+            epsilon=row.epsilon,
+            created_at=row.created_at,
+            environment=env_config,
+        ))
+    return result
+
+@app.post("/reset")
+def reset_agent():
+    """Reset the agent's Q-table and epsilon (e.g. when environment changes)."""
+    agent.q_table = {}
+    agent.epsilon = 1.0
+    agent.prev_state = None
+    agent.prev_action = None
+    return {"status": "reset", "epsilon": agent.epsilon}
+
 
 @app.post("/models")
 def save_model(model_input: ModelCreate, db: Session = Depends(get_db)):
-    """Save the current agent to the DB."""
+    """Save the current agent + its environment config to the DB."""
     binary_data = agent.to_bytes()
+    env_json = model_input.environment.model_dump_json()
     
     new_model = SavedModel(
         name=model_input.name,
         epsilon=agent.epsilon,
-        data=binary_data
+        data=binary_data,
+        environment_config=env_json,
     )
     db.add(new_model)
     db.commit()
@@ -180,7 +218,21 @@ def load_model(model_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Model not found")
     
     agent.from_bytes(saved_model.data)
-    return {"status": "loaded", "epsilon": agent.epsilon, "name": saved_model.name}
+
+    # Parse stored environment config
+    env_config = None
+    if saved_model.environment_config:
+        try:
+            env_config = json.loads(saved_model.environment_config)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {
+        "status": "loaded",
+        "epsilon": agent.epsilon,
+        "name": saved_model.name,
+        "environment": env_config,
+    }
 
 @app.delete("/models/{model_id}")
 def delete_model(model_id: int, db: Session = Depends(get_db)):

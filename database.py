@@ -21,6 +21,7 @@ class SavedModel(Base):
     epsilon = Column(Float)
     created_at = Column(DateTime, default=datetime.utcnow)
     data = Column(LargeBinary)  # We will store the pickled agent here as binary blobs
+    environment_config = Column(String, default="{}")  # JSON string of env config (obstacles, etc.)
 
 # 4. Create Tables
 def init_db():
