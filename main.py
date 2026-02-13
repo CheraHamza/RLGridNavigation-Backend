@@ -2,10 +2,11 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 from agent import QLearningAgent
 from database import SessionLocal, init_db, SavedModel
+from environment import GridWorld
 
 
 init_db()
@@ -33,6 +34,7 @@ def get_db():
 class StepData(BaseModel):
     position: list[int]
     target: list[int]    # Included but not used by Q-Learning yet
+    obstacles: list[list[int]] = []
     reward: float
     done: bool
 
@@ -48,6 +50,25 @@ class ModelList(BaseModel):
     name: str
     epsilon: float
     created_at: datetime
+
+class TrainRequest(BaseModel):
+    episodes: int = 500
+    height: int = 10
+    width: int = 10
+    starting_position: list[int] = [0, 0]
+    target_position: list[int] = [8, 8]
+    obstacles: list[list[int]] = []
+
+class EpisodeResult(BaseModel):
+    episode: int
+    steps: int
+    total_reward: float
+    reached_target: bool
+
+class TrainResponse(BaseModel):
+    episodes_trained: int
+    epsilon: float
+    results: list[EpisodeResult]
 
 
 @app.post("/act", response_model=ActionResponse)
@@ -66,6 +87,69 @@ def act(data: StepData):
     agent.update_memory(data.position, action)
 
     return {"action": action, "epsilon": agent.epsilon}
+
+
+@app.post("/train", response_model=TrainResponse)
+def train(req: TrainRequest):
+    """
+    Run many episodes entirely server-side in a tight loop.
+    No HTTP round-trips or UI updates per step – orders of magnitude faster.
+    """
+    env = GridWorld(
+        height=req.height,
+        width=req.width,
+        starting_position=req.starting_position,
+        target_position=req.target_position,
+        obstacles=req.obstacles,
+    )
+
+    results: list[EpisodeResult] = []
+
+    for ep in range(1, req.episodes + 1):
+        obs = env.reset()
+        total_reward = 0.0
+        reached_target = False
+
+        # First step: no learning yet, just pick an action
+        agent.learn(obs["position"], 0.0, False)  # no-op on first call (prev_state is None)
+        action = agent.choose_action(obs["position"])
+        agent.update_memory(obs["position"], action)
+
+        while True:
+            result = env.step(action)
+            state = result["state"]
+            reward = result["reward"]
+            done = result["done"]
+            total_reward += reward
+
+            # Learn from this transition
+            agent.learn(state["position"], reward, done)
+
+            if done:
+                reached_target = (
+                    state["position"][0] == req.target_position[0]
+                    and state["position"][1] == req.target_position[1]
+                )
+                break
+
+            # Pick next action
+            action = agent.choose_action(state["position"])
+            agent.update_memory(state["position"], action)
+
+        results.append(
+            EpisodeResult(
+                episode=ep,
+                steps=result["steps"],
+                total_reward=round(total_reward, 4),
+                reached_target=reached_target,
+            )
+        )
+
+    return TrainResponse(
+        episodes_trained=req.episodes,
+        epsilon=agent.epsilon,
+        results=results,
+    )
 
 
 @app.get("/models", response_model=List[ModelList])
