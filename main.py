@@ -27,6 +27,15 @@ app.add_middleware(
 
 agent = QLearningAgent()
 
+@app.get("/health")
+def health():
+    """Debug endpoint to verify CORS config."""
+    return {
+        "status": "ok",
+        "cors_origins_env": cors_origins_env,
+        "cors_origins": cors_origins,
+    }
+
 def get_db():
     db = SessionLocal()
     try:
